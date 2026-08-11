@@ -5,3 +5,6 @@ __pycache__/
 *.db
 .env
 .DS_Store
+
+# Local Claude Code settings and launch config
+.claude/
