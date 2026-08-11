@@ -27,11 +27,12 @@ services:
       # means for chore due dates.
       - key: TIMEZONE
         value: America/New_York
+      # Postgres lives outside Render (Neon's free tier), because Render allows
+      # only one free database per account and doesn't expire this one out from
+      # under us. sync:false means Render prompts for the connection string
+      # rather than it being committed here.
+      #
+      # Without this set the app falls back to SQLite on a disk that Render
+      # wipes on every redeploy -- fine for a look around, not for real use.
       - key: DATABASE_URL
-        fromDatabase:
-          name: casita-db
-          property: connectionString
-
-databases:
-  - name: casita-db
-    plan: free
+        sync: false
