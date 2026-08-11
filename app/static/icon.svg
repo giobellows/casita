@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Casita">
+  <rect width="512" height="512" rx="112" fill="#7c9473"/>
+  <path d="M256 118 L412 254 h-40 v138 a18 18 0 0 1-18 18 H158 a18 18 0 0 1-18-18 V254 h-40 Z"
+        fill="#f5f3ed"/>
+  <rect x="228" y="300" width="56" height="92" rx="8" fill="#c67b5c"/>
+  <rect x="170" y="286" width="42" height="42" rx="7" fill="#7c9473" opacity=".5"/>
+  <rect x="300" y="286" width="42" height="42" rx="7" fill="#7c9473" opacity=".5"/>
+</svg>

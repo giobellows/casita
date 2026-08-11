@@ -1,0 +1,37 @@
+# Render blueprint: one file that provisions the web service and its database.
+#
+# Render reads this on "New > Blueprint" and wires everything up, including
+# generating SECRET_KEY and injecting DATABASE_URL from the database below.
+# HOUSE_PASSCODE is marked sync:false so Render prompts you for it rather than
+# it living in this file (which goes in git).
+#
+# Plan names change over time. If Render rejects "free", swap in whatever the
+# dashboard currently offers -- nothing else here depends on it.
+
+services:
+  - type: web
+    name: casita
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: HOUSE_PASSCODE
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: HOUSE_NAME
+        value: Casita
+      # Set this to where the house actually is -- it decides what "today"
+      # means for chore due dates.
+      - key: TIMEZONE
+        value: America/New_York
+      - key: DATABASE_URL
+        fromDatabase:
+          name: casita-db
+          property: connectionString
+
+databases:
+  - name: casita-db
+    plan: free

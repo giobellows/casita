@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1a1f1b" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f5f3ed" media="(prefers-color-scheme: light)" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Casita" />
+<title>Casita</title>
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/icon.png" />
+<link rel="icon" href="/icon.svg" type="image/svg+xml" />
+<!-- ?v= is the update lever: bump it (and CACHE in sw.js) after changing these
+     files and every installed phone picks up the new version on next open. -->
+<link rel="stylesheet" href="/styles.css?v=2" />
+</head>
+<body>
+
+<!-- Sign-in gate. Replaced by the app shell once authenticated. -->
+<div id="gate" class="gate" hidden>
+  <div class="gate-card">
+    <div class="gate-mark">🏡</div>
+    <h1 id="gate-title">Casita</h1>
+    <p class="muted" id="gate-sub">Enter the house passcode</p>
+    <form id="login-form" autocomplete="off">
+      <input id="passcode" type="password" inputmode="text" placeholder="House passcode"
+             autocomplete="current-password" aria-label="House passcode" />
+      <p class="error" id="login-error" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Come in</button>
+    </form>
+  </div>
+</div>
+
+<!-- "Who are you?" -- shown once per device, after the passcode. -->
+<div id="whoami" class="gate" hidden>
+  <div class="gate-card">
+    <div class="gate-mark">👋</div>
+    <h1>Who's this?</h1>
+    <p class="muted">So your chores and spending get credited to you.</p>
+    <div id="whoami-list" class="who-list"></div>
+    <button class="btn btn-ghost btn-block" id="whoami-add">+ Add a roommate</button>
+  </div>
+</div>
+
+<div id="app" class="app" hidden>
+  <header class="topbar">
+    <div class="topbar-title">
+      <span class="topbar-mark">🏡</span>
+      <h1 id="house-name">Casita</h1>
+    </div>
+    <button class="me-chip" id="me-chip" title="Switch roommate"></button>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab" data-tab="home" aria-label="Home">
+      <svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="tab" data-tab="chores" aria-label="Chores">
+      <svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>
+      <span>Chores</span>
+    </button>
+    <button class="tab" data-tab="shopping" aria-label="Shopping">
+      <svg viewBox="0 0 24 24"><path d="M6 6h15l-2 9H8L6 6z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg>
+      <span>Shop</span>
+    </button>
+    <button class="tab" data-tab="calendar" aria-label="Calendar">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+      <span>Calendar</span>
+    </button>
+    <button class="tab" data-tab="money" aria-label="Money">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.7-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.8 3 2 3 .8 3 2-1.3 2-3 2c-1.3 0-2.5-.5-3-1.5"/><path d="M12 6.5v11"/></svg>
+      <span>Money</span>
+    </button>
+    <button class="tab" data-tab="recap" aria-label="Monthly recap">
+      <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Recap</span>
+    </button>
+  </nav>
+</div>
+
+<!-- Generic bottom-sheet modal, filled in by app.js -->
+<div id="sheet" class="sheet-backdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-grip"></div>
+    <div class="sheet-head">
+      <h2 id="sheet-title"></h2>
+      <button class="icon-btn" id="sheet-close" aria-label="Close">✕</button>
+    </div>
+    <div id="sheet-body" class="sheet-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/app.js?v=2"></script>
+</body>
+</html>

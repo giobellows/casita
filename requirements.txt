@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+itsdangerous
+python-dotenv
+psycopg[binary]
+pytest
+httpx
