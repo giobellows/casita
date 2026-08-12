@@ -58,12 +58,37 @@ const PUT = (p, b) => api('PUT', p, b);
 const DEL = (p) => api('DELETE', p);
 
 let toastTimer;
-function toast(message) {
+/** `action` is an optional {label, run} — it turns the toast into an Undo. */
+function toast(message, action) {
   const node = $('#toast');
   node.textContent = message;
+  if (action) {
+    const button = document.createElement('button');
+    button.className = 'toast-action';
+    button.textContent = action.label;
+    button.addEventListener('click', () => {
+      node.hidden = true;
+      clearTimeout(toastTimer);
+      action.run();
+    });
+    node.append(button);
+  }
+  node.classList.toggle('actionable', Boolean(action));
   node.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { node.hidden = true; }, 2200);
+  // An undo needs long enough to notice the mistake and reach for it.
+  toastTimer = setTimeout(() => { node.hidden = true; }, action ? 7000 : 2200);
+}
+
+/** Reverse the last completion of a chore, then refresh. */
+async function undoCompletion(choreId) {
+  try {
+    await POST(`/api/chores/${choreId}/undo`, {});
+    toast('Put back');
+  } catch (err) {
+    toast(err.message);
+  }
+  render();
 }
 
 function money(cents) {
@@ -563,6 +588,8 @@ function choreDetail(chore) {
       <button class="btn btn-block" style="margin-top:0" data-do="snooze">Snooze a day</button>
       <button class="btn btn-block" style="margin-top:0" data-do="edit">Edit</button>
     </div>
+    <button class="btn btn-ghost btn-block" data-do="undo">↩ Undo last completion</button>
+    <p class="swipe-hint">Puts the due date and whose turn it is back to what they were.</p>
     ${state.members.length ? `
       <div class="field" style="margin-top:16px">
         <label>Hand it to someone</label>
@@ -587,7 +614,12 @@ function choreDetail(chore) {
       if (!action) return;
       if (action.dataset.do === 'complete') {
         await POST(`/api/chores/${chore.id}/complete`, {});
-        closeSheet(); toast('Nice — done ✨'); render();
+        closeSheet();
+        toast('Nice — done ✨', { label: 'Undo', run: () => undoCompletion(chore.id) });
+        render();
+      } else if (action.dataset.do === 'undo') {
+        closeSheet();
+        await undoCompletion(chore.id);
       } else if (action.dataset.do === 'snooze') {
         await POST(`/api/chores/${chore.id}/snooze`, { days: 1 });
         closeSheet(); toast('Pushed to tomorrow'); render();
@@ -1094,7 +1126,7 @@ $('#view').addEventListener('click', async (e) => {
     complete.classList.add('on');           // optimistic; render() reconciles
     try {
       await POST(`/api/chores/${id}/complete`, {});
-      toast('Nice — done ✨');
+      toast('Nice — done ✨', { label: 'Undo', run: () => undoCompletion(id) });
     } catch (err) { toast(err.message); }
     render();
     return;

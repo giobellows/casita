@@ -232,6 +232,47 @@ def complete_chore(
     return chore
 
 
+def undo_last_completion(session: Session, chore: models.Chore) -> models.Chore:
+    """Put a chore back the way it was before it was last ticked off.
+
+    Completing a chore changes exactly three things -- the due date, the
+    rotation's current holder, and (for one-offs) the archived flag -- so undo
+    reverses those three and deletes the audit row, which also removes it from
+    the monthly recap.
+
+    The old due date isn't recomputed, it's read back off the completion record,
+    which stored it at the time. That matters because rolling a date forward
+    isn't reversible arithmetic: a neglected chore catches up past today, so
+    stepping backwards by one period would land somewhere it never was.
+
+    Raises LookupError if the chore has never been completed.
+    """
+    last = session.scalars(
+        select(models.ChoreCompletion)
+        .where(models.ChoreCompletion.chore_id == chore.id)
+        .order_by(
+            models.ChoreCompletion.completed_at.desc(),
+            models.ChoreCompletion.id.desc(),
+        )
+        .limit(1)
+    ).first()
+
+    if last is None:
+        raise LookupError("That chore hasn't been completed yet")
+
+    chore.due_on = last.due_on
+    if chore.cadence == "once":
+        chore.archived = False
+    if chore.rotation_mode == "rotate":
+        ring = [slot.member_id for slot in chore.rotation]
+        chore.assignee_id = rotation.rotate_back(ring, chore.assignee_id)
+
+    session.delete(last)
+    session.commit()
+    session.refresh(chore)
+    return chore
+
+
 def snooze_chore(session: Session, chore: models.Chore, days: int) -> models.Chore:
     chore.due_on = chore.due_on + dt.timedelta(days=days)
     session.commit()

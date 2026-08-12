@@ -86,6 +86,24 @@ def rotate_assignee(
     return rotation_member_ids[(position + 1) % len(rotation_member_ids)]
 
 
+def rotate_back(
+    rotation_member_ids: list[int], current_assignee_id: int | None
+) -> int | None:
+    """Hand the baton back to the previous roommate -- the inverse of
+    `rotate_assignee`, used when a completion is undone.
+
+    Round-trips exactly: rotate_back(rotate_assignee(ring, x)) == x for any x
+    in the ring. If the ring was edited in between, this lands on the front
+    rather than guessing, same as rotating forwards.
+    """
+    if not rotation_member_ids:
+        return None
+    if current_assignee_id not in rotation_member_ids:
+        return rotation_member_ids[0]
+    position = rotation_member_ids.index(current_assignee_id)
+    return rotation_member_ids[(position - 1) % len(rotation_member_ids)]
+
+
 def status_for(due_on: dt.date, today: dt.date) -> str:
     """Bucket a due date for display: overdue / today / soon / later."""
     delta = (due_on - today).days

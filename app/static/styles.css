@@ -549,6 +549,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
   animation: rise .2s ease;
   pointer-events: none;
   max-width: 90vw;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* Only a toast carrying an Undo should swallow taps. */
+.toast.actionable { pointer-events: auto; }
+
+.toast-action {
+  background: none;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--bg) 35%, transparent);
+  padding: 2px 0 2px 12px;
+  margin: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  /* Comfortable to hit on a phone without making the pill tall. */
+  min-height: 28px;
 }
 
 .swipe-hint { font-size: 12px; color: var(--muted); text-align: center; padding: 8px 0 0; }

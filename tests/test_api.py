@@ -125,6 +125,96 @@ class TestChores:
         assert res.status_code == 422
 
 
+class TestUndo:
+    """Marking something done by mistake has to be reversible."""
+
+    def _rotating(self, client, house, **overrides):
+        payload = {
+            "name": "Trash",
+            "cadence": "weekly",
+            "rotation_mode": "rotate",
+            "rotation_member_ids": [m["id"] for m in house],
+        }
+        payload.update(overrides)
+        return client.post("/api/chores", json=payload).json()
+
+    def test_restores_due_date_and_whose_turn(self, client, house):
+        chore = self._rotating(client, house, due_on="2026-08-10")
+        client.post(f"/api/chores/{chore['id']}/complete", json={})
+
+        undone = client.post(f"/api/chores/{chore['id']}/undo", json={}).json()
+        assert undone["due_on"] == "2026-08-10"
+        assert undone["assignee"]["name"] == "Gio"
+
+    def test_round_trips_any_number_of_times(self, client, house):
+        chore = self._rotating(client, house, due_on="2026-08-10")
+        for _ in range(4):
+            client.post(f"/api/chores/{chore['id']}/complete", json={})
+            undone = client.post(f"/api/chores/{chore['id']}/undo", json={}).json()
+            assert undone["due_on"] == "2026-08-10"
+            assert undone["assignee"]["name"] == "Gio"
+
+    def test_restores_the_real_date_for_a_neglected_chore(self, client, house):
+        """The due date is read back, not recomputed.
+
+        Completing a long-overdue chore catches it up past today, so stepping
+        back one period would land on a date it was never due.
+        """
+        chore = self._rotating(client, house, due_on="2026-06-01")
+        client.post(f"/api/chores/{chore['id']}/complete", json={})
+        undone = client.post(f"/api/chores/{chore['id']}/undo", json={}).json()
+        assert undone["due_on"] == "2026-06-01"
+
+    def test_brings_back_a_one_off(self, client, house):
+        chore = client.post(
+            "/api/chores", json={"name": "Fix the door", "cadence": "once"}
+        ).json()
+        client.post(f"/api/chores/{chore['id']}/complete", json={})
+        assert client.get("/api/chores").json() == []
+
+        undone = client.post(f"/api/chores/{chore['id']}/undo", json={}).json()
+        assert undone["archived"] is False
+        assert len(client.get("/api/chores").json()) == 1
+
+    def test_removes_it_from_the_monthly_recap(self, client, house):
+        chore = client.post("/api/chores", json={"name": "Dishes"}).json()
+        client.post(f"/api/chores/{chore['id']}/complete", json={})
+        assert client.get("/api/recap").json()["totals"]["chores"] == 1
+
+        client.post(f"/api/chores/{chore['id']}/undo", json={})
+        recap = client.get("/api/recap").json()
+        assert recap["totals"]["chores"] == 0
+        assert recap["rows"] == []
+
+    def test_undoes_only_the_most_recent(self, client, house):
+        chore = client.post("/api/chores", json={"name": "Dishes", "cadence": "daily"}).json()
+        client.post(f"/api/chores/{chore['id']}/complete", json={"member_id": house[0]["id"]})
+        client.post(f"/api/chores/{chore['id']}/complete", json={"member_id": house[1]["id"]})
+
+        client.post(f"/api/chores/{chore['id']}/undo", json={})
+        rows = client.get("/api/recap").json()["rows"]
+        # Sam's tick is reversed; Gio's earlier one survives.
+        assert [(r["member"]["name"], r["chores_done"]) for r in rows] == [("Gio", 1)]
+
+    def test_unassigned_chore_undoes_fine(self, client, house):
+        chore = client.post(
+            "/api/chores", json={"name": "Sweep", "due_on": "2026-08-10"}
+        ).json()
+        client.post(f"/api/chores/{chore['id']}/complete", json={})
+        undone = client.post(f"/api/chores/{chore['id']}/undo", json={}).json()
+        assert undone["due_on"] == "2026-08-10"
+        assert undone["assignee"] is None
+
+    def test_nothing_to_undo_is_a_clear_error(self, client, house):
+        chore = client.post("/api/chores", json={"name": "Dishes"}).json()
+        res = client.post(f"/api/chores/{chore['id']}/undo", json={})
+        assert res.status_code == 400
+        assert "hasn't been completed" in res.json()["detail"]
+
+    def test_undoing_a_missing_chore_is_a_404(self, client, house):
+        assert client.post("/api/chores/9999/undo", json={}).status_code == 404
+
+
 class TestShopping:
     def test_add_toggle_and_clear(self, client, house):
         item = client.post("/api/shopping", json={"name": "Oat milk"}).json()

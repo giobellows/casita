@@ -172,6 +172,17 @@ def complete_chore(
     )
 
 
+@api.post("/chores/{chore_id}/undo")
+def undo_chore(chore_id: int, session: Session = Depends(get_session)):
+    """Reverse the most recent completion -- for when it wasn't actually done."""
+    chore = _get_or_404(session, models.Chore, chore_id)
+    try:
+        undone = service.undo_last_completion(session, chore)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return service.chore_out(undone, service.today())
+
+
 @api.post("/chores/{chore_id}/snooze")
 def snooze_chore(
     chore_id: int, data: schemas.SnoozeIn, session: Session = Depends(get_session)

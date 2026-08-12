@@ -8,9 +8,9 @@
 // Bump CACHE whenever the shell changes -- `activate` deletes every other
 // cache, which is what evicts a stale app.js from an installed home-screen app.
 // Keep the ?v= numbers here in step with the ones in index.html.
-const CACHE = 'casita-v2';
+const CACHE = 'casita-v3';
 const SHELL = [
-  '/', '/index.html', '/styles.css?v=2', '/app.js?v=2',
+  '/', '/index.html', '/styles.css?v=3', '/app.js?v=3',
   '/manifest.webmanifest', '/icon.svg',
 ];
 

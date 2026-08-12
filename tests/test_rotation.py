@@ -11,6 +11,7 @@ from app.rotation import (
     describe_cadence,
     next_due,
     rotate_assignee,
+    rotate_back,
     status_for,
     step_once,
 )
@@ -95,6 +96,30 @@ class TestRotate:
 
     def test_single_person_keeps_it(self):
         assert rotate_assignee([7], 7) == 7
+
+
+class TestRotateBack:
+    ring = [1, 2, 3]
+
+    def test_steps_backwards(self):
+        assert rotate_back(self.ring, 2) == 1
+        assert rotate_back(self.ring, 3) == 2
+
+    def test_wraps_around(self):
+        assert rotate_back(self.ring, 1) == 3
+
+    def test_undoes_a_forward_rotation_exactly(self):
+        for member in self.ring:
+            assert rotate_back(self.ring, rotate_assignee(self.ring, member)) == member
+
+    def test_unknown_holder_restarts_at_front(self):
+        assert rotate_back(self.ring, 99) == 1
+
+    def test_empty_ring(self):
+        assert rotate_back([], 1) is None
+
+    def test_single_person_keeps_it(self):
+        assert rotate_back([7], 7) == 7
 
 
 class TestStatus:
