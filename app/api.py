@@ -223,6 +223,16 @@ def post_shopping(
     return service.shopping_out(item)
 
 
+@api.put("/shopping/{item_id}")
+def put_shopping(
+    item_id: int,
+    data: schemas.ShoppingItemIn,
+    session: Session = Depends(get_session),
+):
+    item = _get_or_404(session, models.ShoppingItem, item_id)
+    return service.shopping_out(service.update_shopping_item(session, item, data))
+
+
 @api.post("/shopping/{item_id}/toggle")
 def toggle_shopping(
     item_id: int, request: Request, session: Session = Depends(get_session)
@@ -269,6 +279,14 @@ def post_event(
 ):
     event = service.create_event(session, data, _member_id(request))
     return service.event_out(event)
+
+
+@api.put("/events/{event_id}")
+def put_event(
+    event_id: int, data: schemas.EventIn, session: Session = Depends(get_session)
+):
+    event = _get_or_404(session, models.Event, event_id)
+    return service.event_out(service.update_event(session, event, data))
 
 
 @api.delete("/events/{event_id}")

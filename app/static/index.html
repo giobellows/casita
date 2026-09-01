@@ -10,18 +10,19 @@
 <meta name="apple-mobile-web-app-title" content="Casita" />
 <title>Casita</title>
 <link rel="manifest" href="/manifest.webmanifest" />
-<link rel="apple-touch-icon" href="/icon.png" />
-<link rel="icon" href="/icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/icon.png?v=4" />
+<link rel="icon" href="/icon.svg?v=4" type="image/svg+xml" />
 <!-- ?v= is the update lever: bump it (and CACHE in sw.js) after changing these
      files and every installed phone picks up the new version on next open. -->
-<link rel="stylesheet" href="/styles.css?v=3" />
+<link rel="stylesheet" href="/styles.css?v=4" />
 </head>
 <body>
 
 <!-- Sign-in gate. Replaced by the app shell once authenticated. -->
 <div id="gate" class="gate" hidden>
   <div class="gate-card">
-    <div class="gate-mark">🏡</div>
+    <!-- The house mark is injected by app.js so its geometry lives in one place. -->
+    <div class="gate-mark" id="gate-mark"></div>
     <h1 id="gate-title">Casita</h1>
     <p class="muted" id="gate-sub">Enter the house passcode</p>
     <form id="login-form" autocomplete="off">
@@ -47,7 +48,7 @@
 <div id="app" class="app" hidden>
   <header class="topbar">
     <div class="topbar-title">
-      <span class="topbar-mark">🏡</span>
+      <span class="topbar-mark" id="topbar-mark"></span>
       <h1 id="house-name">Casita</h1>
     </div>
     <button class="me-chip" id="me-chip" title="Switch roommate"></button>
@@ -97,6 +98,6 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="/app.js?v=3"></script>
+<script src="/app.js?v=4"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# Casita 🏡
+# Casita
 
 A small house app for roommates: chores, a shopping list, a shared calendar,
 split costs, and a house board. Works in any browser and installs to a phone
@@ -68,10 +68,33 @@ rotation ring, and completing it passes the baton to the next roommate.
 
 **Attribution is recorded but not displayed.** Ticking a chore or buying an item
 quietly notes who did it; the day-to-day lists stay anonymous so the app reads
-like a shared list rather than a scoreboard. Those numbers surface in one place:
-the **Recap** tab, which shows who did what month by month, with past months
-browsable. Roommates who did nothing that month are left off — a row of zeroes
-for someone who was travelling reads as an accusation, not information.
+like a shared list rather than a scoreboard.
+
+Those numbers surface once a month, in the **Recap** tab, and not before. While a
+month is still running the per-roommate figures are withheld by the *server* —
+`recap()` returns empty `rows` and `awards` for any month that isn't over, so
+there is nothing to read out of the network tab either. Only the house-wide
+total is live, because how the house is doing isn't the same as who to blame for
+it. On the 1st the month unseals and three titles are handed out on chore count
+alone:
+
+| | |
+| --- | --- |
+| **MVR** | Most Valuable Roommate — the top of the table |
+| **The Shlom** | everyone strictly between the ends |
+| **LVR** | Least Valuable Roommate — the bottom, and doing nothing counts |
+
+Ties share a title. A two-person house has no middle, so The Shlom goes
+unawarded; if the whole house is level nobody wins anything, since a table where
+everyone is simultaneously most and least valuable isn't a table. Roommates who
+have moved out aren't ranked. Below the awards, the full per-person breakdown
+lists only people who did something — a row of zeroes for someone who was
+travelling reads as an accusation, not information.
+
+**Everything is editable after the fact.** Chores, shopping items and calendar
+events each carry a pencil that reopens them in the form they were created with;
+a completed chore can also be un-completed from its detail sheet, which puts the
+due date and whose turn it is back the way they were.
 
 **Money** is stored in integer cents, never floats. Bills split evenly with the
 leftover pennies distributed deterministically, so shares always sum to exactly
@@ -81,10 +104,30 @@ payments to square up.
 ## Shipping an update
 
 Installed home-screen apps hold onto cached assets, so after changing
-`app.js` or `styles.css`, bump the `?v=` numbers in `app/static/index.html` and
-the matching `CACHE` name and `SHELL` entries in `app/static/sw.js`. The service
-worker deletes every other cache on activation, so every phone picks up the new
-version the next time it's opened. Backend changes need no bump.
+`app.js`, `styles.css` or `icon.svg`, bump the `?v=` numbers in
+`app/static/index.html` (and the one in `MARK` in `app.js`, and the manifest)
+plus the matching `CACHE` name and `SHELL` entries in `app/static/sw.js`. The
+service worker deletes every other cache on activation, so every phone picks up
+the new version the next time it's opened. Backend changes need no bump.
+
+## The logo
+
+`app/static/icon.svg` is the house itself, bumper-sticker style: Neembu, Cheese
+and Shlom holding hands. It is the single source of the mark — the topbar, the
+gate and the welcome screen all point an `<img>` at that same file rather than
+carrying a copy, so they can't drift apart.
+
+`icon.png` is the raster version iOS wants for the home screen. Regenerate it
+after editing the SVG by stripping the tile's rounded corners (iOS applies its
+own) and rasterising:
+
+```bash
+sed 's/ rx="114"//' app/static/icon.svg > /tmp/square.svg && mkdir -p /tmp/png && qlmanage -t -s 512 -o /tmp/png /tmp/square.svg && cp /tmp/png/square.svg.png app/static/icon.png
+```
+
+The manifest deliberately does *not* declare a `maskable` icon. Android's
+maskable crop is a circle across the middle 80%, which would take the outer
+figures' feet off; without it Android letterboxes the full icon instead.
 
 ## Tests
 
@@ -92,9 +135,15 @@ version the next time it's opened. Backend changes need no bump.
 .venv/bin/python -m pytest -q
 ```
 
-73 tests covering the date arithmetic (month-end clamping, catch-up, rotation
-wrap-around), the money splitting (shares always sum to the total, settle-up
-clears every balance), and the API end to end.
+125 tests covering the date arithmetic (month-end clamping, catch-up, rotation
+wrap-around and back), the money splitting (shares always sum to the total,
+settle-up clears every balance), the award ranking (ties, house sizes,
+eligibility), and the API end to end.
+
+Recap tests can't just complete a chore and read the numbers back, because the
+month it lands in is still running. `revealed_recap()` in `tests/test_api.py`
+winds the house clock forward a year instead, which is closer to what actually
+happens than faking the completion timestamps would be.
 
 ## Layout
 

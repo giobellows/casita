@@ -5,6 +5,25 @@ from __future__ import annotations
 import datetime as dt
 
 
+def sealed_recap(client):
+    """This month's recap, read while the month is still running."""
+    stamped = dt.datetime.now(dt.UTC).date()
+    return client.get(f"/api/recap?month={stamped:%Y-%m}").json()
+
+
+def revealed_recap(client, monkeypatch):
+    """This month's recap, read as though the month had ended.
+
+    Completions are stamped by the database in UTC as they happen, and a recap
+    only unseals once the month it covers is in the past. So the way to see a
+    revealed one in a test is to wind the house's clock forward rather than to
+    fake the completion timestamps.
+    """
+    stamped = dt.datetime.now(dt.UTC).date()
+    monkeypatch.setattr("app.service.today", lambda: dt.date(stamped.year + 1, 1, 1))
+    return client.get(f"/api/recap?month={stamped:%Y-%m}").json()
+
+
 class TestMembers:
     def test_create_and_list(self, client):
         client.post("/api/members", json={"name": "Gio", "emoji": "🐙"})
@@ -55,19 +74,22 @@ class TestChores:
         assert done["archived"] is True
         assert client.get("/api/chores").json() == []
 
-    def test_completion_is_credited_quietly_to_the_browsers_member(self, client, house):
+    def test_completion_is_credited_quietly_to_the_browsers_member(
+        self, client, house, monkeypatch
+    ):
         chore = self._rotating(client, house)
         client.post(f"/api/chores/{chore['id']}/complete", json={})
-        # Attribution never appears in the live views, only in the recap.
-        rows = client.get("/api/recap").json()["rows"]
+        # Attribution never appears in the live views, only in the recap, and
+        # only once the month it belongs to is over.
+        rows = revealed_recap(client, monkeypatch)["rows"]
         assert [(r["member"]["name"], r["chores_done"]) for r in rows] == [("Gio", 1)]
 
-    def test_explicit_doer_overrides_the_cookie(self, client, house):
+    def test_explicit_doer_overrides_the_cookie(self, client, house, monkeypatch):
         chore = self._rotating(client, house)
         client.post(
             f"/api/chores/{chore['id']}/complete", json={"member_id": house[2]["id"]}
         )
-        rows = client.get("/api/recap").json()["rows"]
+        rows = revealed_recap(client, monkeypatch)["rows"]
         assert [(r["member"]["name"], r["chores_done"]) for r in rows] == [("Ali", 1)]
 
     def test_chores_are_unassigned_unless_asked_for(self, client, house):
@@ -77,11 +99,11 @@ class TestChores:
         assert chore["rotation_mode"] == "anyone"
         assert chore["rotation"] == []
 
-    def test_an_unassigned_chore_can_still_be_completed(self, client, house):
+    def test_an_unassigned_chore_can_still_be_completed(self, client, house, monkeypatch):
         chore = client.post("/api/chores", json={"name": "Sweep", "cadence": "weekly"}).json()
         done = client.post(f"/api/chores/{chore['id']}/complete", json={}).json()
         assert done["assignee"] is None
-        rows = client.get("/api/recap").json()["rows"]
+        rows = revealed_recap(client, monkeypatch)["rows"]
         assert rows[0]["chores_done"] == 1
 
     def test_snooze_pushes_the_due_date(self, client, house):
@@ -186,13 +208,13 @@ class TestUndo:
         assert recap["totals"]["chores"] == 0
         assert recap["rows"] == []
 
-    def test_undoes_only_the_most_recent(self, client, house):
+    def test_undoes_only_the_most_recent(self, client, house, monkeypatch):
         chore = client.post("/api/chores", json={"name": "Dishes", "cadence": "daily"}).json()
         client.post(f"/api/chores/{chore['id']}/complete", json={"member_id": house[0]["id"]})
         client.post(f"/api/chores/{chore['id']}/complete", json={"member_id": house[1]["id"]})
 
         client.post(f"/api/chores/{chore['id']}/undo", json={})
-        rows = client.get("/api/recap").json()["rows"]
+        rows = revealed_recap(client, monkeypatch)["rows"]
         # Sam's tick is reversed; Gio's earlier one survives.
         assert [(r["member"]["name"], r["chores_done"]) for r in rows] == [("Gio", 1)]
 
@@ -228,6 +250,47 @@ class TestShopping:
         client.post("/api/shopping/clear", json={})
         assert client.get("/api/shopping").json() == []
 
+    def test_an_item_can_be_corrected_after_the_fact(self, client, house):
+        item = client.post("/api/shopping", json={"name": "Milk"}).json()
+        edited = client.put(
+            f"/api/shopping/{item['id']}",
+            json={
+                "name": "Oat milk",
+                "note": "the barista one",
+                "category": "Fridge",
+                "is_staple": True,
+            },
+        ).json()
+        assert edited["name"] == "Oat milk"
+        assert edited["note"] == "the barista one"
+        assert edited["category"] == "Fridge"
+        assert edited["is_staple"] is True
+
+    def test_editing_leaves_the_tick_alone(self, client, house):
+        """Renaming something in the cart shouldn't put it back on the list."""
+        item = client.post("/api/shopping", json={"name": "Milk"}).json()
+        client.post(f"/api/shopping/{item['id']}/toggle", json={})
+
+        edited = client.put(
+            f"/api/shopping/{item['id']}", json={"name": "Oat milk"}
+        ).json()
+        assert edited["purchased"] is True
+        assert edited["purchased_by"]["name"] == "Gio"
+
+    def test_editing_keeps_who_added_it(self, client, house):
+        item = client.post("/api/shopping", json={"name": "Milk"}).json()
+        edited = client.put(
+            f"/api/shopping/{item['id']}", json={"name": "Oat milk"}
+        ).json()
+        assert edited["added_by"]["name"] == "Gio"
+
+    def test_editing_a_missing_item_is_a_404(self, client, house):
+        assert client.put("/api/shopping/9999", json={"name": "x"}).status_code == 404
+
+    def test_an_edit_still_needs_a_name(self, client, house):
+        item = client.post("/api/shopping", json={"name": "Milk"}).json()
+        assert client.put(f"/api/shopping/{item['id']}", json={"name": ""}).status_code == 422
+
     def test_staples_come_back_unticked(self, client, house):
         item = client.post(
             "/api/shopping", json={"name": "Toilet paper", "is_staple": True}
@@ -253,6 +316,68 @@ class TestCalendar:
             "/api/events", json={"title": "Trip", "starts_on": "2026-09-01"}
         ).json()
         assert event["all_day"] is True
+
+    def test_an_event_can_be_moved_and_renamed(self, client, house):
+        event = client.post(
+            "/api/events", json={"title": "Party", "starts_on": "2026-09-01"}
+        ).json()
+        edited = client.put(
+            f"/api/events/{event['id']}",
+            json={
+                "title": "Housewarming",
+                "starts_on": "2026-09-05",
+                "starts_at": "19:30",
+                "ends_at": "23:00",
+                "location": "Roof",
+                "notes": "Bring a chair",
+            },
+        ).json()
+        assert edited["title"] == "Housewarming"
+        assert edited["starts_on"] == "2026-09-05"
+        assert edited["starts_at"] == "19:30:00"
+        assert edited["location"] == "Roof"
+        assert edited["all_day"] is False
+
+    def test_clearing_the_time_makes_it_all_day_again(self, client, house):
+        event = client.post(
+            "/api/events",
+            json={"title": "Party", "starts_on": "2026-09-01", "starts_at": "19:30"},
+        ).json()
+        assert event["all_day"] is False
+
+        edited = client.put(
+            f"/api/events/{event['id']}",
+            json={"title": "Party", "starts_on": "2026-09-01", "starts_at": None},
+        ).json()
+        assert edited["all_day"] is True
+
+    def test_editing_does_not_change_whose_event_it_is(self, client, house):
+        """Who added it is who to ask about it -- an edit isn't a takeover."""
+        event = client.post(
+            "/api/events", json={"title": "Party", "starts_on": "2026-09-01"}
+        ).json()
+        client.post("/api/identify", json={"member_id": house[1]["id"]})
+
+        edited = client.put(
+            f"/api/events/{event['id']}",
+            json={"title": "Party", "starts_on": "2026-09-02"},
+        ).json()
+        assert edited["created_by"]["name"] == "Gio"
+
+    def test_an_edited_event_moves_between_date_ranges(self, client, house):
+        event = client.post(
+            "/api/events", json={"title": "Party", "starts_on": "2026-09-01"}
+        ).json()
+        client.put(
+            f"/api/events/{event['id']}",
+            json={"title": "Party", "starts_on": "2026-11-20"},
+        )
+        assert client.get("/api/events?start=2026-09-01&end=2026-09-30").json() == []
+        assert len(client.get("/api/events?start=2026-11-01&end=2026-11-30").json()) == 1
+
+    def test_editing_a_missing_event_is_a_404(self, client, house):
+        res = client.put("/api/events/9999", json={"title": "x", "starts_on": "2026-09-01"})
+        assert res.status_code == 404
 
 
 class TestExpenses:
@@ -338,7 +463,9 @@ class TestRecap:
         assert recap["totals"] == {"chores": 0, "items": 0, "spent_cents": 0}
         assert recap["label"] == "January 2020"
 
-    def test_counts_chores_shopping_and_spending_together(self, client, house):
+    def test_counts_chores_shopping_and_spending_together(
+        self, client, house, monkeypatch
+    ):
         chore = client.post("/api/chores", json={"name": "Dishes", "cadence": "daily"}).json()
         client.post(f"/api/chores/{chore['id']}/complete", json={})
 
@@ -354,7 +481,7 @@ class TestRecap:
             },
         )
 
-        recap = client.get("/api/recap").json()
+        recap = revealed_recap(client, monkeypatch)
         gio = next(r for r in recap["rows"] if r["member"]["name"] == "Gio")
         assert gio["chores_done"] == 1
         assert gio["items_bought"] == 1
@@ -363,32 +490,32 @@ class TestRecap:
         assert gio["net_cents"] == 4000
         assert recap["totals"]["spent_cents"] == 6000
 
-    def test_repeated_chores_are_tallied_not_repeated(self, client, house):
+    def test_repeated_chores_are_tallied_not_repeated(self, client, house, monkeypatch):
         chore = client.post("/api/chores", json={"name": "Dishes", "cadence": "daily"}).json()
         for _ in range(3):
             client.post(f"/api/chores/{chore['id']}/complete", json={})
 
-        recap = client.get("/api/recap").json()
+        recap = revealed_recap(client, monkeypatch)
         gio = next(r for r in recap["rows"] if r["member"]["name"] == "Gio")
         assert gio["chores_done"] == 3
         assert gio["chore_names"] == [{"name": "Dishes", "count": 3}]
 
-    def test_roommates_who_did_nothing_are_left_out(self, client, house):
+    def test_roommates_who_did_nothing_are_left_out(self, client, house, monkeypatch):
         chore = client.post("/api/chores", json={"name": "Dishes", "cadence": "daily"}).json()
         client.post(f"/api/chores/{chore['id']}/complete", json={})
 
-        recap = client.get("/api/recap").json()
+        recap = revealed_recap(client, monkeypatch)
         assert [r["member"]["name"] for r in recap["rows"]] == ["Gio"]
         # ...but they're still available for a full-house view.
         assert len(recap["everyone"]) == 3
 
-    def test_ordered_by_who_did_most(self, client, house):
+    def test_ordered_by_who_did_most(self, client, house, monkeypatch):
         chore = client.post("/api/chores", json={"name": "Dishes", "cadence": "daily"}).json()
         client.post(f"/api/chores/{chore['id']}/complete", json={"member_id": house[1]["id"]})
         client.post(f"/api/chores/{chore['id']}/complete", json={"member_id": house[1]["id"]})
         client.post(f"/api/chores/{chore['id']}/complete", json={"member_id": house[2]["id"]})
 
-        rows = client.get("/api/recap").json()["rows"]
+        rows = revealed_recap(client, monkeypatch)["rows"]
         assert [r["member"]["name"] for r in rows] == ["Sam", "Ali"]
 
     def test_other_months_are_not_counted(self, client, house):
@@ -405,6 +532,74 @@ class TestRecap:
     def test_rejects_a_malformed_month(self, client, house):
         assert client.get("/api/recap?month=nonsense").status_code == 400
         assert client.get("/api/recap?month=2026-13").status_code == 400
+
+
+class TestSealedRecap:
+    """A month in progress keeps its scores to itself."""
+
+    def _done(self, client, house, times=1, member=None):
+        chore = client.post(
+            "/api/chores", json={"name": "Dishes", "cadence": "daily"}
+        ).json()
+        for _ in range(times):
+            body = {"member_id": member} if member else {}
+            client.post(f"/api/chores/{chore['id']}/complete", json=body)
+
+    def test_this_month_is_sealed(self, client, house):
+        self._done(client, house)
+        recap = sealed_recap(client)
+        assert recap["revealed"] is False
+
+    def test_sealed_means_the_numbers_are_never_sent(self, client, house):
+        """Withheld server-side, not hidden in the page -- otherwise anyone
+        curious could read the standings out of the network tab all month."""
+        self._done(client, house, times=3)
+        recap = sealed_recap(client)
+        assert recap["rows"] == []
+        assert recap["everyone"] == []
+        assert recap["awards"] == []
+        assert "Gio" not in str(recap)
+
+    def test_the_house_total_still_shows(self, client, house):
+        """How the house is doing is not the same as who to blame for it."""
+        self._done(client, house, times=3)
+        assert sealed_recap(client)["totals"]["chores"] == 3
+
+    def test_counts_down_to_the_reveal(self, client, house, monkeypatch):
+        monkeypatch.setattr("app.service.today", lambda: dt.date(2026, 8, 12))
+        recap = client.get("/api/recap?month=2026-08").json()
+        assert recap["days_left"] == 20  # 31st is the last day; the 1st unseals
+
+    def test_the_last_day_of_the_month_is_still_sealed(self, client, house, monkeypatch):
+        monkeypatch.setattr("app.service.today", lambda: dt.date(2026, 8, 31))
+        recap = client.get("/api/recap?month=2026-08").json()
+        assert recap["revealed"] is False
+        assert recap["days_left"] == 1
+
+    def test_a_finished_month_is_open(self, client, house, monkeypatch):
+        monkeypatch.setattr("app.service.today", lambda: dt.date(2026, 9, 1))
+        recap = client.get("/api/recap?month=2026-08").json()
+        assert recap["revealed"] is True
+        assert recap["days_left"] == 0
+
+    def test_a_month_that_has_not_started_is_sealed(self, client, house, monkeypatch):
+        monkeypatch.setattr("app.service.today", lambda: dt.date(2026, 8, 12))
+        assert client.get("/api/recap?month=2026-12").json()["revealed"] is False
+
+    def test_awards_arrive_with_the_reveal(self, client, house, monkeypatch):
+        self._done(client, house, times=3, member=house[0]["id"])
+        self._done(client, house, times=2, member=house[1]["id"])
+        self._done(client, house, times=1, member=house[2]["id"])
+
+        awards = revealed_recap(client, monkeypatch)["awards"]
+        assert [(a["key"], a["winners"][0]["member"]["name"]) for a in awards] == [
+            ("mvr", "Gio"),
+            ("shlom", "Sam"),
+            ("lvr", "Ali"),
+        ]
+
+    def test_a_quiet_month_hands_out_nothing(self, client, house, monkeypatch):
+        assert revealed_recap(client, monkeypatch)["awards"] == []
 
 
 class TestAuth:

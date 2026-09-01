@@ -1,8 +1,65 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Casita">
-  <rect width="512" height="512" rx="112" fill="#7c9473"/>
-  <path d="M256 118 L412 254 h-40 v138 a18 18 0 0 1-18 18 H158 a18 18 0 0 1-18-18 V254 h-40 Z"
-        fill="#f5f3ed"/>
-  <rect x="228" y="300" width="56" height="92" rx="8" fill="#c67b5c"/>
-  <rect x="170" y="286" width="42" height="42" rx="7" fill="#7c9473" opacity=".5"/>
-  <rect x="300" y="286" width="42" height="42" rx="7" fill="#7c9473" opacity=".5"/>
+  <!-- The house, family-bumper-sticker style: Neembu, Cheese and Shlom holding
+       hands. Everything sits inside the middle 80% so Android's maskable crop
+       and iOS's squircle never take a hand off. -->
+  <rect width="512" height="512" rx="114" fill="#6f8a66"/>
+
+  <g fill="none" stroke="#f4f0e4" stroke-width="20"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- Bodies. Each starts up inside its own head so no neck ends in a gap. -->
+    <path d="M130 220 V322"/>
+    <path d="M256 200 V322"/>
+    <path d="M382 208 V322"/>
+    <!-- Arms. The inner hands share a point, so the three are genuinely joined
+         rather than merely adjacent. -->
+    <path d="M74 290 L130 240 L193 272"/>
+    <path d="M193 272 L256 234 L319 272"/>
+    <path d="M319 272 L382 238 L438 290"/>
+    <!-- Legs -->
+    <path d="M88 396 L130 322 L172 396"/>
+    <path d="M214 396 L256 322 L298 396"/>
+    <path d="M340 396 L382 322 L424 396"/>
+  </g>
+
+  <!-- Neembu: long curly hair and glasses. The curls sit on the edge of an
+       underlying hair mass at deliberately uneven sizes and spacings — evenly
+       spaced circles of one radius read as a flower, not as hair. The last two
+       hang past the jaw to give the length. -->
+  <g fill="#6b4a35">
+    <ellipse cx="130" cy="168" rx="33" ry="35"/>
+    <circle cx="110" cy="140" r="12"/>
+    <circle cx="131" cy="133" r="12"/>
+    <circle cx="151" cy="141" r="11"/>
+    <circle cx="163" cy="162" r="12"/>
+    <circle cx="167" cy="186" r="13"/>
+    <circle cx="164" cy="210" r="12"/>
+    <circle cx="158" cy="230" r="11"/>
+    <circle cx="150" cy="246" r="10"/>
+    <circle cx="97" cy="162" r="12"/>
+    <circle cx="93" cy="186" r="13"/>
+    <circle cx="96" cy="210" r="12"/>
+    <circle cx="102" cy="230" r="11"/>
+    <circle cx="110" cy="246" r="10"/>
+  </g>
+  <circle cx="130" cy="166" r="27" fill="#f4f0e4"/>
+  <g fill="none" stroke="#2f3b2b" stroke-width="4.5" stroke-linecap="round">
+    <circle cx="119" cy="168" r="9.5"/>
+    <circle cx="141" cy="168" r="9.5"/>
+    <path d="M128.5 168 H131.5"/>
+  </g>
+
+  <!-- Cheese: a block with a cut corner, and three holes. -->
+  <path d="M210 206 V170 L300 150 V206 Z" fill="#e8b96f" stroke="#e8b96f"
+        stroke-width="16" stroke-linejoin="round"/>
+  <g fill="#b8873c">
+    <circle cx="232" cy="188" r="7"/>
+    <circle cx="262" cy="180" r="7"/>
+    <circle cx="282" cy="197" r="6"/>
+  </g>
+
+  <!-- Shlom: two triangles, one star. -->
+  <g fill="none" stroke="#7aa6c6" stroke-width="14" stroke-linejoin="round">
+    <path d="M382 128 L418 191 H346 Z"/>
+    <path d="M382 212 L346 149 H418 Z"/>
+  </g>
 </svg>

@@ -148,6 +148,36 @@ function avatar(member, size) {
 
 const isMe = (member) => !!(member && state.me && member.id === state.me.id);
 
+/* The house mark: the app icon itself, shown on the gate, in the topbar and on
+   the welcome screen. It's the icon file rather than a copy of the drawing, so
+   the three of you on the home screen and the three of you in the header can
+   never drift apart. Sized by the font-size of whatever it sits in. */
+const MARK = '<img class="mark" src="/icon.svg?v=4" alt="" />';
+
+$('#gate-mark').innerHTML = MARK;
+$('#topbar-mark').innerHTML = MARK;
+
+/** A chore by id, from whichever list the current tab happens to have loaded. */
+function findChore(id) {
+  const summary = state.data.summary || {};
+  const everywhere = [
+    ...(state.data.chores || []),
+    ...(summary.overdue || []),
+    ...(summary.due_today || []),
+    ...(summary.this_week || []),
+  ];
+  return everywhere.find((c) => c.id === id);
+}
+
+/** Likewise an event — the home screen shows a few of these too. */
+function findEvent(id) {
+  const everywhere = [
+    ...(state.data.events || []),
+    ...((state.data.summary || {}).upcoming_events || []),
+  ];
+  return everywhere.find((e) => e.id === id);
+}
+
 // ------------------------------------------------------------------ sheet ---
 
 function openSheet(title, html, onMount) {
@@ -402,6 +432,7 @@ function choreRow(chore) {
           ${who ? `<span class="pill ${mine ? 'mine' : ''}">${esc(who.emoji)} ${mine ? 'You' : esc(who.name)}</span>` : ''}
         </div>
       </div>
+      <button class="icon-btn" data-edit-chore="${chore.id}" aria-label="Edit ${esc(chore.name)}">✏️</button>
     </div>`;
 }
 
@@ -659,6 +690,7 @@ async function addStarterChores() {
 
 async function renderShopping() {
   const items = await GET('/api/shopping');
+  state.data.shopping = items;
   const open = items.filter((i) => !i.purchased);
   const done = items.filter((i) => i.purchased);
 
@@ -707,8 +739,49 @@ function shopRow(item) {
               The numbers surface once a month in the Recap tab. */ ''}
         ${item.note ? `<div class="row-sub"><span class="pill">${esc(item.note)}</span></div>` : ''}
       </div>
+      <button class="icon-btn" data-edit-shop="${item.id}" aria-label="Edit ${esc(item.name)}">✏️</button>
       <button class="icon-btn" data-del-shop="${item.id}" aria-label="Remove">🗑</button>
     </div>`;
+}
+
+/** Edit an item already on the list. Adding still goes through the quick-add
+    bar — one field is faster than a form when you're stood in the kitchen. */
+function shopForm(item) {
+  const html = `
+    <div class="field"><label>Item</label>
+      <input id="i-name" value="${esc(item.name)}" /></div>
+    <div class="field"><label>Note (optional)</label>
+      <input id="i-note" value="${esc(item.note)}" placeholder="Oat, not almond" /></div>
+    <div class="field"><label>List it under</label>
+      <input id="i-cat" value="${esc(item.category)}" placeholder="Groceries" /></div>
+    <label class="chip" style="display:inline-flex">
+      <input type="checkbox" id="i-staple" ${item.is_staple ? 'checked' : ''}
+             style="width:auto;min-height:0" /> Staple — comes back after every shop
+    </label>
+    <button class="btn btn-primary btn-block" id="i-save">Save changes</button>
+    <button class="btn btn-ghost btn-danger btn-block" id="i-del">Remove from list</button>
+  `;
+
+  openSheet('Edit item', html, (root) => {
+    root.querySelector('#i-save').addEventListener('click', async () => {
+      const name = root.querySelector('#i-name').value.trim();
+      if (!name) { toast('Give it a name'); return; }
+      try {
+        await PUT(`/api/shopping/${item.id}`, {
+          name,
+          note: root.querySelector('#i-note').value,
+          category: root.querySelector('#i-cat').value.trim() || 'Groceries',
+          is_staple: root.querySelector('#i-staple').checked,
+        });
+        closeSheet(); toast('Saved'); renderShopping();
+      } catch (err) { toast(err.message); }
+    });
+
+    root.querySelector('#i-del').addEventListener('click', async () => {
+      await DEL(`/api/shopping/${item.id}`);
+      closeSheet(); toast('Removed'); renderShopping();
+    });
+  });
 }
 
 // --------------------------------------------------------------- calendar ---
@@ -726,12 +799,15 @@ function eventRow(event) {
           ${event.created_by ? `<span class="pill">${esc(event.created_by.emoji)}</span>` : ''}
         </div>
       </div>
-      <button class="icon-btn" data-del-event="${event.id}" aria-label="Delete">🗑</button>
+      ${/* Editing is the common case and deleting the rare one, so the row
+            offers the pencil and the sheet behind it offers the bin. */ ''}
+      <button class="icon-btn" data-edit-event="${event.id}" aria-label="Edit ${esc(event.title)}">✏️</button>
     </div>`;
 }
 
 async function renderCalendar() {
   const events = await GET('/api/events');
+  state.data.events = events;
   const byDay = {};
   events.forEach((e) => { (byDay[e.starts_on] ||= []).push(e); });
 
@@ -747,36 +823,63 @@ async function renderCalendar() {
   `;
 }
 
-function eventForm() {
+function eventForm(existing) {
+  const e = existing || {
+    title: '', starts_on: isoDate(todayDate()), starts_at: null, ends_at: null,
+    location: '', notes: '',
+  };
+  // <input type="time"> wants HH:MM; the API sends HH:MM:SS.
+  const clock = (t) => (t ? t.slice(0, 5) : '');
+
   const html = `
     <div class="field"><label>What's happening</label>
-      <input id="e-title" placeholder="Landlord inspection" /></div>
+      <input id="e-title" value="${esc(e.title)}" placeholder="Landlord inspection" /></div>
     <div class="field"><label>Date</label>
-      <input id="e-date" type="date" value="${isoDate(todayDate())}" /></div>
+      <input id="e-date" type="date" value="${esc(e.starts_on)}" /></div>
     <div class="field-row">
-      <div class="field"><label>Start (optional)</label><input id="e-start" type="time" /></div>
-      <div class="field"><label>End (optional)</label><input id="e-end" type="time" /></div>
+      <div class="field"><label>Start (optional)</label>
+        <input id="e-start" type="time" value="${esc(clock(e.starts_at))}" /></div>
+      <div class="field"><label>End (optional)</label>
+        <input id="e-end" type="time" value="${esc(clock(e.ends_at))}" /></div>
     </div>
-    <div class="field"><label>Where (optional)</label><input id="e-loc" placeholder="Kitchen" /></div>
-    <div class="field"><label>Notes (optional)</label><textarea id="e-notes"></textarea></div>
-    <button class="btn btn-primary btn-block" id="e-save">Add to calendar</button>
+    <div class="field"><label>Where (optional)</label>
+      <input id="e-loc" value="${esc(e.location)}" placeholder="Kitchen" /></div>
+    <div class="field"><label>Notes (optional)</label>
+      <textarea id="e-notes">${esc(e.notes)}</textarea></div>
+    <button class="btn btn-primary btn-block" id="e-save">
+      ${existing ? 'Save changes' : 'Add to calendar'}
+    </button>
+    ${existing ? '<button class="btn btn-ghost btn-danger btn-block" id="e-del">Delete event</button>' : ''}
   `;
-  openSheet('New event', html, (root) => {
+
+  openSheet(existing ? 'Edit event' : 'New event', html, (root) => {
     root.querySelector('#e-save').addEventListener('click', async () => {
       const title = root.querySelector('#e-title').value.trim();
       if (!title) { toast('Give it a title'); return; }
+      const payload = {
+        title,
+        starts_on: root.querySelector('#e-date').value,
+        // Blanking the start time turns it back into an all-day event.
+        starts_at: root.querySelector('#e-start').value || null,
+        ends_at: root.querySelector('#e-end').value || null,
+        location: root.querySelector('#e-loc').value,
+        notes: root.querySelector('#e-notes').value,
+      };
       try {
-        await POST('/api/events', {
-          title,
-          starts_on: root.querySelector('#e-date').value,
-          starts_at: root.querySelector('#e-start').value || null,
-          ends_at: root.querySelector('#e-end').value || null,
-          location: root.querySelector('#e-loc').value,
-          notes: root.querySelector('#e-notes').value,
-        });
-        closeSheet(); toast('Added'); render();
+        if (existing) await PUT(`/api/events/${existing.id}`, payload);
+        else await POST('/api/events', payload);
+        closeSheet(); toast(existing ? 'Saved' : 'Added'); render();
       } catch (err) { toast(err.message); }
     });
+
+    const delBtn = root.querySelector('#e-del');
+    if (delBtn) {
+      delBtn.addEventListener('click', async () => {
+        if (!confirm(`Delete "${e.title}"?`)) return;
+        await DEL(`/api/events/${existing.id}`);
+        closeSheet(); toast('Deleted'); render();
+      });
+    }
   });
 }
 
@@ -924,38 +1027,105 @@ function monthShift(month, delta) {
 const thisMonth = () => (state.today || isoDate(new Date())).slice(0, 7);
 
 async function renderRecap() {
-  const month = state.recapMonth || thisMonth();
-  const recap = await GET(`/api/recap?month=${month}`);
-  const atCurrent = month >= thisMonth();
-  const { totals } = recap;
+  if (state.recapMonth) {
+    paintRecap(state.recapMonth, await GET(`/api/recap?month=${state.recapMonth}`));
+    return;
+  }
 
+  // Opening the tab lands on the month that actually has something in it. The
+  // current one is sealed almost all of the time, so last month's awards are
+  // the news — unless there weren't any, in which case the running totals for
+  // this month beat an empty page about last one.
+  const previous = monthShift(thisMonth(), -1);
+  const lastMonth = await GET(`/api/recap?month=${previous}`);
+  if (lastMonth.awards.length) {
+    paintRecap(previous, lastMonth);
+    return;
+  }
+  paintRecap(thisMonth(), await GET(`/api/recap?month=${thisMonth()}`));
+}
+
+function paintRecap(month, recap) {
+  const atCurrent = month >= thisMonth();
   $('#view').innerHTML = `
     <div class="month-nav">
       <button class="icon-btn" data-month="${monthShift(month, -1)}" aria-label="Previous month">‹</button>
       <h2>${esc(recap.label)}</h2>
       <button class="icon-btn" data-month="${monthShift(month, 1)}" ${atCurrent ? 'disabled' : ''} aria-label="Next month">›</button>
     </div>
+    ${recap.revealed ? openedRecap(recap) : sealedRecap(recap, month)}
+  `;
+}
 
-    ${recap.is_current
-      ? '<div class="banner">This month is still going — the numbers keep moving until it ends.</div>'
-      : ''}
-
+function houseTotals(totals) {
+  return `
     <div class="recap-total">
       <strong>${totals.chores}</strong> chores done
       <span>·</span>
       <strong>${totals.items}</strong> shop runs
       <span>·</span>
       <strong>${money(totals.spent_cents)}</strong> spent
+    </div>`;
+}
+
+/** A month still in progress. The per-person numbers genuinely aren't in the
+    payload, so there's nothing here to reveal early even if you went looking. */
+function sealedRecap(recap, month) {
+  const days = recap.days_left;
+  const opens = days <= 0 ? 'when the month turns over'
+    : days === 1 ? 'tomorrow'
+    : `in ${days} days`;
+
+  return `
+    <div class="sealed">
+      <div class="sealed-mark">🏆</div>
+      <h3>${esc(recap.label)} is still being written</h3>
+      <p class="muted">Who did what stays sealed until the month is over.
+        The awards open ${esc(opens)}.</p>
     </div>
 
+    ${houseTotals(recap.totals)}
+    <p class="swipe-hint">That's the whole house together — no names attached.</p>
+
+    <button class="btn btn-block" data-month="${monthShift(month, -1)}">
+      ‹ See last month's awards
+    </button>`;
+}
+
+function openedRecap(recap) {
+  return `
+    ${recap.awards.length ? recap.awards.map(awardCard).join('') : ''}
+    ${houseTotals(recap.totals)}
     ${recap.rows.length
-      ? recap.rows.map(recapCard).join('')
-      : `<div class="empty">Nothing logged in ${esc(recap.label)} yet.<br><br>
-           Tick chores off as you do them and they'll show up here at the end of the month.</div>`}
+      ? `<div class="day-label">The full breakdown</div>${recap.rows.map(recapCard).join('')}`
+      : `<div class="empty">Nothing was logged in ${esc(recap.label)}.<br><br>
+           Tick chores off as you do them and the awards write themselves.</div>`}
   `;
 }
 
-function recapCard(row, index) {
+function awardCard(award) {
+  const winners = award.winners.map((w) => `
+    <div class="winner">
+      ${avatar(w.member, 32)}
+      <span class="winner-name">${isMe(w.member) ? 'You' : esc(w.member.name)}</span>
+      <span class="winner-score">${w.chores_done} ${w.chores_done === 1 ? 'chore' : 'chores'}</span>
+    </div>`).join('');
+
+  return `
+    <div class="award award-${esc(award.key)}">
+      <div class="award-head">
+        <span class="award-emoji">${esc(award.emoji)}</span>
+        <div class="award-names">
+          <div class="award-title">${esc(award.title)}</div>
+          <div class="award-sub">${esc(award.subtitle)}</div>
+        </div>
+      </div>
+      <div class="winners">${winners}</div>
+      <p class="award-blurb">${esc(award.blurb)}</p>
+    </div>`;
+}
+
+function recapCard(row) {
   const chores = row.chore_names
     .map((c) => `<span class="pill">${esc(c.name)}${c.count > 1 ? ` ×${c.count}` : ''}</span>`)
     .join('');
@@ -965,7 +1135,6 @@ function recapCard(row, index) {
       <div class="recap-top">
         ${avatar(row.member, 34)}
         <span class="name">${isMe(row.member) ? 'You' : esc(row.member.name)}</span>
-        ${index === 0 && row.chores_done ? '<span class="recap-rank">most chores 🌿</span>' : ''}
       </div>
       <div class="recap-metrics">
         <div class="metric"><div class="n">${row.chores_done}</div><div class="l">chores</div></div>
@@ -1078,7 +1247,7 @@ function settingsSheet() {
 async function onboarding() {
   $('#view').innerHTML = `
     <div class="section" style="text-align:center;padding-top:24px">
-      <div style="font-size:44px">🏡</div>
+      <div class="onboard-mark">${MARK}</div>
       <h2 style="font-size:22px;margin-top:8px">Welcome to ${esc(state.house)}</h2>
       <p class="muted" style="margin-top:6px">Start by adding everyone who lives here.</p>
       <button class="btn btn-primary btn-block" data-action="add-member" style="max-width:280px;margin:18px auto 0">
@@ -1134,23 +1303,36 @@ $('#view').addEventListener('click', async (e) => {
 
   const open = e.target.closest('[data-open-chore]');
   if (open) {
-    const chore = (state.data.chores || []).find((c) => c.id === Number(open.dataset.openChore))
-      || [...(state.data.summary?.overdue || []), ...(state.data.summary?.due_today || [])]
-        .find((c) => c.id === Number(open.dataset.openChore));
+    const chore = findChore(Number(open.dataset.openChore));
     if (chore) choreDetail(chore);
+    return;
+  }
+
+  const editChore = e.target.closest('[data-edit-chore]');
+  if (editChore) {
+    const chore = findChore(Number(editChore.dataset.editChore));
+    if (chore) choreForm(chore);
     return;
   }
 
   const buy = e.target.closest('[data-buy]');
   if (buy) { await POST(`/api/shopping/${buy.dataset.buy}/toggle`, {}); renderShopping(); return; }
 
+  const editShop = e.target.closest('[data-edit-shop]');
+  if (editShop) {
+    const item = (state.data.shopping || []).find((i) => i.id === Number(editShop.dataset.editShop));
+    if (item) shopForm(item);
+    return;
+  }
+
   const delShop = e.target.closest('[data-del-shop]');
   if (delShop) { await DEL(`/api/shopping/${delShop.dataset.delShop}`); renderShopping(); return; }
 
-  const delEvent = e.target.closest('[data-del-event]');
-  if (delEvent) {
-    if (!confirm('Delete this event?')) return;
-    await DEL(`/api/events/${delEvent.dataset.delEvent}`); render(); return;
+  const editEvent = e.target.closest('[data-edit-event]');
+  if (editEvent) {
+    const event = findEvent(Number(editEvent.dataset.editEvent));
+    if (event) eventForm(event);
+    return;
   }
 
   const delExpense = e.target.closest('[data-del-expense]');

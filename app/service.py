@@ -305,11 +305,74 @@ def month_bounds(year: int, month: int) -> tuple[dt.datetime, dt.datetime]:
     return start, end
 
 
+# The end-of-month honours, in the order they're handed out. Ranked purely on
+# chores done -- shopping runs and spending are reported but don't score, because
+# a title you can buy isn't worth winning.
+AWARDS = (
+    ("mvr", "MVR", "Most Valuable Roommate", "🏆", "Carried the house."),
+    ("shlom", "The Shlom", "Neither hero nor villain", "🛋️", "Comfortably mid."),
+    ("lvr", "LVR", "Least Valuable Roommate", "🦥", "There's always next month."),
+)
+
+
+def hand_out_awards(rows: list[dict]) -> list[dict]:
+    """Rank the house by chores done and give out the three titles.
+
+    Only current roommates are eligible -- handing a trophy to someone who moved
+    out in week two isn't a joke anyone gets. Doing nothing is still eligible for
+    LVR; that's rather the point of it.
+
+    Ties share a title: two people on four chores are both MVR. If the entire
+    house is level, nobody wins anything, because a table where everyone is
+    simultaneously most and least valuable isn't a table.
+    """
+    eligible = [row for row in rows if row["member"].active]
+    if len(eligible) < 2:
+        return []
+
+    tallies = {row["chores_done"] for row in eligible}
+    if len(tallies) < 2:
+        return []
+
+    most, least = max(tallies), min(tallies)
+    # A two-person house has a top and a bottom and nothing in between, so the
+    # middle bucket comes out empty and The Shlom simply goes unawarded.
+    buckets = {
+        "mvr": [r for r in eligible if r["chores_done"] == most],
+        "shlom": [r for r in eligible if least < r["chores_done"] < most],
+        "lvr": [r for r in eligible if r["chores_done"] == least],
+    }
+
+    handed_out = []
+    for key, title, subtitle, emoji, blurb in AWARDS:
+        winners = sorted(
+            buckets[key], key=lambda r: (-r["chores_done"], r["member"].name)
+        )
+        if not winners:
+            continue
+        handed_out.append(
+            {
+                "key": key,
+                "title": title,
+                "subtitle": subtitle,
+                "emoji": emoji,
+                "blurb": blurb,
+                "winners": [
+                    {"member": r["member"], "chores_done": r["chores_done"]}
+                    for r in winners
+                ],
+            }
+        )
+    return handed_out
+
+
 def recap(session: Session, year: int, month: int) -> dict:
     """Who did what over one month.
 
-    This is the only place attribution surfaces. Completions are recorded
-    quietly as they happen; nothing in the day-to-day views reads them back.
+    This is the only place attribution surfaces, and only once the month is
+    over. While it's still running the per-roommate numbers are withheld
+    server-side rather than hidden in the page: a scoreboard you can peek at all
+    month is just the constant tracking this app deliberately doesn't do.
     """
     start, end = month_bounds(year, month)
     members = list_members(session, include_inactive=True)
@@ -388,17 +451,33 @@ def recap(session: Session, year: int, month: int) -> dict:
     # someone who was travelling reads as an accusation, not information.
     active = [r for r in ordered if r["chores_done"] or r["items_bought"] or r["paid_cents"]]
 
-    return {
+    on = today()
+    revealed = (year, month) < (on.year, on.month)
+
+    payload = {
         "month": f"{year:04d}-{month:02d}",
         "label": dt.date(year, month, 1).strftime("%B %Y"),
-        "rows": active,
-        "everyone": ordered,
+        "revealed": revealed,
+        # Counts down to the reveal. Clamped at zero so the last day of the
+        # month reads "today" rather than a negative number.
+        "days_left": 0 if revealed else max((end.date() - on).days, 0),
+        "is_current": (year, month) == (on.year, on.month),
+        # House-wide totals are safe to show all month -- they say how the house
+        # is doing without saying who to blame.
         "totals": {
             "chores": sum(r["chores_done"] for r in ordered),
             "items": sum(r["items_bought"] for r in ordered),
             "spent_cents": sum(e.amount_cents for e in expenses),
         },
-        "is_current": (start.year, start.month) == (today().year, today().month),
+    }
+
+    if not revealed:
+        return payload | {"rows": [], "everyone": [], "awards": []}
+
+    return payload | {
+        "rows": active,
+        "everyone": ordered,
+        "awards": hand_out_awards(ordered),
     }
 
 
@@ -444,6 +523,21 @@ def add_shopping_item(
     )
     session.add(item)
     session.commit()
+    return item
+
+
+def update_shopping_item(
+    session: Session, item: models.ShoppingItem, data: schemas.ShoppingItemIn
+) -> models.ShoppingItem:
+    """Correct an item after the fact -- rename it, note the brand, move it to
+    another list. Whether it's been bought, and by whom, is left alone: that's
+    the tick's job, not the edit form's."""
+    item.name = data.name.strip()
+    item.note = data.note
+    item.category = data.category or "Groceries"
+    item.is_staple = data.is_staple
+    session.commit()
+    session.refresh(item)
     return item
 
 
@@ -528,6 +622,26 @@ def create_event(
     )
     session.add(event)
     session.commit()
+    return event
+
+
+def update_event(
+    session: Session, event: models.Event, data: schemas.EventIn
+) -> models.Event:
+    """Move it, rename it, drop the time to make it all-day.
+
+    `created_by` deliberately stays with whoever added it -- an edit isn't a
+    change of ownership, and rewriting it would quietly erase who to ask about
+    the landlord visit.
+    """
+    event.title = data.title.strip()
+    event.starts_on = data.starts_on
+    event.starts_at = data.starts_at
+    event.ends_at = data.ends_at
+    event.location = data.location
+    event.notes = data.notes
+    session.commit()
+    session.refresh(event)
     return event
 
 
