@@ -25,7 +25,7 @@
        underlying hair mass at deliberately uneven sizes and spacings — evenly
        spaced circles of one radius read as a flower, not as hair. The last two
        hang past the jaw to give the length. -->
-  <g fill="#6b4a35">
+  <g fill="#1c1c1c">
     <ellipse cx="130" cy="168" rx="33" ry="35"/>
     <circle cx="110" cy="140" r="12"/>
     <circle cx="131" cy="133" r="12"/>
