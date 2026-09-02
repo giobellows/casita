@@ -127,6 +127,9 @@ def delete_member(member_id: int, session: Session = Depends(get_session)):
 def get_chores(
     include_archived: bool = False, session: Session = Depends(get_session)
 ):
+    # A read that writes, deliberately: there's no scheduler on a free web
+    # service, so "it's a new day" has to be noticed by someone opening the app.
+    service.catch_up_chores(session)
     on = service.today()
     return [
         service.chore_out(c, on)
@@ -375,6 +378,7 @@ def delete_note(note_id: int, session: Session = Depends(get_session)):
 @api.get("/summary")
 def summary(request: Request, session: Session = Depends(get_session)):
     """The home screen, assembled server-side so the phone does one fetch."""
+    service.catch_up_chores(session)
     on = service.today()
     chores = [service.chore_out(c, on) for c in service.list_chores(session)]
     me_id = _member_id(request)

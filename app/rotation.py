@@ -70,6 +70,38 @@ def next_due(
     return upcoming
 
 
+def catch_up(
+    due_on: dt.date, cadence: str, interval_n: int, today: dt.date
+) -> dt.date:
+    """Roll a missed chore forward into its current period.
+
+    Where `next_due` lands *past* today because the chore was just done, this
+    stops *at* today because it wasn't: the chore is still owed, it just stops
+    accumulating a lateness figure that grows without bound. A daily chore
+    nobody got to for three weeks comes back as due today rather than "19 days
+    late"; a weekly one comes back due this week, at most one period behind.
+
+    Chores are a schedule, not a debt. Missing Tuesday's bins doesn't mean you
+    owe two bin-days on Wednesday, and a list that opens as a wall of red is one
+    people stop opening.
+
+    One-offs don't repeat, so they keep their date and stay as late as they
+    genuinely are -- there's no next occurrence for "fix the door" to roll into.
+    """
+    if cadence == "once" or due_on >= today:
+        return due_on
+
+    current = due_on
+    steps = 0
+    while steps < _MAX_CATCHUP_STEPS:
+        following = step_once(current, cadence, interval_n)
+        if following > today:
+            break
+        current = following
+        steps += 1
+    return current
+
+
 def rotate_assignee(
     rotation_member_ids: list[int], current_assignee_id: int | None
 ) -> int | None:

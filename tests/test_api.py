@@ -147,6 +147,82 @@ class TestChores:
         assert res.status_code == 422
 
 
+class TestDailyRefresh:
+    """Opening the app rolls missed chores into today rather than piling them up."""
+
+    def _stale(self, client, days_ago, **overrides):
+        payload = {
+            "name": "Dishes",
+            "cadence": "daily",
+            "due_on": (dt.date.today() - dt.timedelta(days=days_ago)).isoformat(),
+        }
+        payload.update(overrides)
+        return client.post("/api/chores", json=payload).json()
+
+    def test_listing_refreshes_a_stale_daily_chore(self, client, house):
+        self._stale(client, 19)
+        chore = client.get("/api/chores").json()[0]
+        assert chore["due_on"] == dt.date.today().isoformat()
+        assert chore["status"] == "today"
+        assert chore["days_until"] == 0
+
+    def test_the_home_screen_refreshes_it_too(self, client, house):
+        self._stale(client, 19)
+        summary = client.get("/api/summary").json()
+        assert len(summary["due_today"]) == 1
+        assert summary["overdue"] == []
+
+    def test_the_refresh_is_saved_not_just_displayed(self, client, house):
+        chore = self._stale(client, 19)
+        client.get("/api/chores")
+        # Read back through an endpoint that does no catching up of its own.
+        again = client.post(f"/api/chores/{chore['id']}/snooze", json={"days": 1}).json()
+        assert again["due_on"] == (dt.date.today() + dt.timedelta(days=1)).isoformat()
+
+    def test_a_weekly_chore_stays_overdue_within_its_week(self, client, house):
+        self._stale(client, 2, cadence="weekly")
+        chore = client.get("/api/chores").json()[0]
+        assert chore["status"] == "overdue"
+        assert chore["days_until"] == -2
+
+    def test_a_long_neglected_weekly_chore_is_at_most_a_week_late(self, client, house):
+        self._stale(client, 60, cadence="weekly")
+        chore = client.get("/api/chores").json()[0]
+        assert -7 < chore["days_until"] <= 0
+
+    def test_a_one_off_keeps_its_full_lateness(self, client, house):
+        """Nothing to roll into -- "fix the door" really is three weeks late."""
+        self._stale(client, 21, cadence="once")
+        chore = client.get("/api/chores").json()[0]
+        assert chore["days_until"] == -21
+
+    def test_refreshing_does_not_pass_the_baton(self, client, house):
+        """Nobody did it, so it's still your turn."""
+        chore = self._stale(
+            client,
+            19,
+            rotation_mode="rotate",
+            rotation_member_ids=[m["id"] for m in house],
+        )
+        assert chore["assignee"]["name"] == "Gio"
+        refreshed = client.get("/api/chores").json()[0]
+        assert refreshed["assignee"]["name"] == "Gio"
+
+    def test_refreshing_is_not_a_completion(self, client, house, monkeypatch):
+        """A skipped chore must not credit anyone in the recap."""
+        self._stale(client, 19)
+        client.get("/api/chores")
+        recap = revealed_recap(client, monkeypatch)
+        assert recap["totals"]["chores"] == 0
+        assert recap["rows"] == []
+
+    def test_a_snoozed_chore_is_left_where_it_was_put(self, client, house):
+        chore = self._stale(client, 19)
+        client.post(f"/api/chores/{chore['id']}/snooze", json={"days": 30})
+        expected = (dt.date.today() + dt.timedelta(days=11)).isoformat()
+        assert client.get("/api/chores").json()[0]["due_on"] == expected
+
+
 class TestUndo:
     """Marking something done by mistake has to be reversible."""
 
@@ -600,6 +676,23 @@ class TestSealedRecap:
 
     def test_a_quiet_month_hands_out_nothing(self, client, house, monkeypatch):
         assert revealed_recap(client, monkeypatch)["awards"] == []
+
+
+class TestHealth:
+    def test_reports_which_database_is_behind_it(self, client):
+        """The one thing you can't tell from outside until data goes missing."""
+        body = client.get("/healthz").json()
+        assert body["ok"] is True
+        assert body["database"] in {"sqlite", "postgres"}
+
+    def test_never_leaks_the_connection_string(self, client):
+        assert "://" not in str(client.get("/healthz").json())
+
+    def test_needs_no_passcode(self, client, monkeypatch):
+        """A health check that 401s is no use to a host's uptime probe."""
+        monkeypatch.setattr("app.auth.AUTH_DISABLED", False)
+        monkeypatch.setattr("app.auth.config.HOUSE_PASSCODE", "kachow")
+        assert client.get("/healthz").status_code == 200
 
 
 class TestAuth:

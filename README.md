@@ -34,6 +34,19 @@ Start command for a PaaS:
 uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
+### Checking the deploy is on a real database
+
+`GET /healthz` reports which backend is actually in use:
+
+```json
+{ "ok": true, "database": "postgres" }
+```
+
+Worth checking after any deploy. If `DATABASE_URL` isn't set, the app falls back
+to SQLite on the container's disk and behaves identically from the outside —
+right up until the host redeploys and the file goes with it. `"database":
+"sqlite"` on a hosted instance means the next deploy eats your data.
+
 ## Configuration
 
 Copy `.env.example` to `.env`. Everything has a working local default except the
@@ -61,6 +74,17 @@ four people who share a kitchen.
 weeks" works), or are one-offs that archive when done. Completing one rolls the
 due date forward; a chore that went ignored for a month catches up past today
 rather than reappearing as still overdue.
+
+**Missed chores refresh rather than accumulate.** A chore is a schedule, not a
+debt: skipping Tuesday's bins doesn't mean you owe two bin-days on Wednesday.
+Opening the chore list or the home screen rolls every missed recurring chore
+into its *current* period, so a daily chore nobody got to for three weeks reads
+"Today" rather than "19 days late", and lateness never exceeds one cadence
+interval. Within the period it still shows as overdue — yesterday's weekly bins
+say "Yesterday" — so the nag survives; only the pile-up goes. One-offs are
+exempt, having no next occurrence to roll into, and whose turn it is doesn't
+move, because nobody did it. Since a free web service has no scheduler, this is
+a read that writes: "it's a new day" gets noticed when someone opens the app.
 
 Assigning a chore is **optional**. By default nobody owns it — anyone can tick
 it off. If you do want turns, a chore can be pinned to one person or given a
@@ -135,7 +159,7 @@ figures' feet off; without it Android letterboxes the full icon instead.
 .venv/bin/python -m pytest -q
 ```
 
-125 tests covering the date arithmetic (month-end clamping, catch-up, rotation
+148 tests covering the date arithmetic (month-end clamping, catch-up, rotation
 wrap-around and back), the money splitting (shares always sum to the total,
 settle-up clears every balance), the award ranking (ties, house sizes,
 eligibility), and the API end to end.

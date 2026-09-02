@@ -55,7 +55,17 @@ app.include_router(api)
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True}
+    """Liveness, plus which database is actually behind it.
+
+    `database` reports the backend and never the URL. A host where DATABASE_URL
+    was meant to be set but wasn't falls back to SQLite on the container's disk,
+    which behaves identically from outside right up until a redeploy wipes it --
+    so this is the one thing worth being able to check without a shell.
+    """
+    return {
+        "ok": True,
+        "database": "sqlite" if config.IS_SQLITE else "postgres",
+    }
 
 
 @app.exception_handler(404)

@@ -8,6 +8,7 @@ import pytest
 
 from app.rotation import (
     add_months,
+    catch_up,
     describe_cadence,
     next_due,
     rotate_assignee,
@@ -72,6 +73,55 @@ class TestNextDue:
 
     def test_daily_chore_weeks_behind_lands_tomorrow(self):
         assert next_due(D(2026, 7, 20), "daily", 1, D(2026, 8, 10)) == D(2026, 8, 11)
+
+
+class TestCatchUp:
+    """Missed chores rejoin the schedule instead of stacking up as debt."""
+
+    today = D(2026, 8, 10)
+
+    def test_a_daily_chore_weeks_behind_is_simply_due_today(self):
+        assert catch_up(D(2026, 7, 20), "daily", 1, self.today) == self.today
+
+    def test_a_weekly_chore_keeps_its_weekday(self):
+        # Due on a Tuesday in July; today is the following Monday. It lands on
+        # the most recent Tuesday, not on today.
+        assert catch_up(D(2026, 7, 7), "weekly", 1, D(2026, 8, 10)) == D(2026, 8, 4)
+
+    def test_never_lands_in_the_future(self):
+        for start in (D(2026, 6, 1), D(2026, 7, 15), D(2026, 8, 9)):
+            for cadence in ("daily", "weekly", "monthly"):
+                assert catch_up(start, cadence, 1, self.today) <= self.today
+
+    def test_lateness_never_exceeds_one_period(self):
+        landed = catch_up(D(2026, 5, 4), "weekly", 1, self.today)
+        assert (self.today - landed).days < 7
+
+    def test_respects_the_interval(self):
+        # Every two weeks from June 1: the 15th, the 29th, July 13th...
+        assert catch_up(D(2026, 6, 1), "weekly", 2, self.today) == D(2026, 8, 10)
+
+    def test_a_chore_due_today_is_left_alone(self):
+        assert catch_up(self.today, "daily", 1, self.today) == self.today
+
+    def test_a_future_chore_is_not_dragged_back(self):
+        """Snoozing pushes a due date forward; catching up must not undo it."""
+        assert catch_up(D(2026, 8, 20), "daily", 1, self.today) == D(2026, 8, 20)
+
+    def test_one_offs_stay_as_late_as_they_really_are(self):
+        assert catch_up(D(2026, 6, 1), "once", 1, self.today) == D(2026, 6, 1)
+
+    def test_a_chore_one_day_late_stays_one_day_late(self):
+        """Yesterday's weekly bins are still owed today, not deferred a week."""
+        assert catch_up(D(2026, 8, 9), "weekly", 1, self.today) == D(2026, 8, 9)
+
+    def test_monthly_clamping_does_not_run_away(self):
+        landed = catch_up(D(2026, 1, 31), "monthly", 1, D(2026, 4, 15))
+        assert landed == D(2026, 3, 28)
+
+    def test_is_idempotent(self):
+        once = catch_up(D(2026, 6, 3), "weekly", 1, self.today)
+        assert catch_up(once, "weekly", 1, self.today) == once
 
 
 class TestRotate:

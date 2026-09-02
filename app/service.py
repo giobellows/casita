@@ -117,6 +117,38 @@ def deactivate_member(session: Session, member: models.Member) -> None:
 # --------------------------------------------------------------------------
 
 
+def catch_up_chores(session: Session) -> int:
+    """Bring every missed recurring chore into its current period.
+
+    Run before the chore list and the home screen are built, so opening the app
+    shows what's owed *now* rather than everything that was ever skipped. See
+    `rotation.catch_up` for why that's the right default.
+
+    Whose turn it is deliberately does not move. Nobody did it, so it's still
+    yours -- rolling the date forward is a kindness about the list, not an
+    amnesty on the rota.
+
+    Returns how many chores moved, which is mostly of interest to the tests.
+    """
+    on = today()
+    moved = 0
+    stale = session.scalars(
+        select(models.Chore).where(
+            models.Chore.archived.is_(False),
+            models.Chore.due_on < on,
+            models.Chore.cadence != "once",
+        )
+    )
+    for chore in stale:
+        current = rotation.catch_up(chore.due_on, chore.cadence, chore.interval_n, on)
+        if current != chore.due_on:
+            chore.due_on = current
+            moved += 1
+    if moved:
+        session.commit()
+    return moved
+
+
 def list_chores(session: Session, include_archived: bool = False):
     stmt = select(models.Chore).order_by(
         models.Chore.due_on, models.Chore.sort_order, models.Chore.id
